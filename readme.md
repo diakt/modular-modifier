@@ -2,9 +2,15 @@
 
 ## Description
 
-Modular Modifier is a Processing script that allows you to chain together procedural/glitch effects on an input image/GIF. The output depends on the order and settings of each effect. For example, you can split a GIF into RGB subframes, then apply a glitch effect to those subframes before putting the whole thing back together again.
+Modular Modifier is a Processing script that allows you to chain together procedural/glitch effects on an input image/GIF. The output depends on the order and settings of each effect. For example, you can split a GIF into RGB subframes, then apply a glitch effect to those subframes before putting the whole thing back together again. Or you can convert an image to ASCII then spiral-project it. Or you can palette-cycle a GIF and then slit-scan it. There are lots of possibilities!
 
-![](example-input.gif) ![](example-output.gif)
+![](example-input.gif)
+
+*the previous image slit-scanned and JPEG-glitched:*
+
+![](example-output.gif)
+
+*a spiral-projected GIF:*
 
 ![](example-output-2.gif)
 
@@ -27,6 +33,10 @@ To export the results, press any key while the output window is open.
 ### `FrameDuplicator`
 
 When loading still images instead of GIFs, this can be used to generate more frames to work with.
+
+#### Options
+
+  * `count`: The number of output frames.
 
 ### `PixelScaler`
 
