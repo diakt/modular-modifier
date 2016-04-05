@@ -1,0 +1,12 @@
+via http://www.yohng.com/software/terminalvector.html:
+
+Original Terminal font is shipped with Windows and copyrighted as follows:
+
+Copyright (c) Bitstream Inc. 1984. All rights reserved.
+Copyright (c) Microsoft Corp. 1991-1993
+
+I disclaim any rights to this font and release the vector version into public domain.
+
+Technically the font has been redrawn in vector form and thus does not contain information from the original Bitstream font. However if you plan to ship this font with a commercial product, please check with Bitstream Inc, or otherwise do it on your own responsibility.
+
+If Bitstream Inc gives a universally positive answer, please let me know.

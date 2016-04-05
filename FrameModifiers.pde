@@ -1,15 +1,40 @@
 /*******************************************************************************
+ * resizes frames without filtering
+ */
+public class PixelScaler implements Modifier {
+  int scale = 2;
+
+  public Frames modify(Frames input) {
+    println("Scaling frames...");
+    int width = input.width;
+    int height = input.height;
+    Frames output = new Frames(input.type, input.count, width*scale, height*scale);
+    PGraphics buffer = createGraphics(width*scale, height*scale);
+
+    // scale each frame
+    for (int i = 0; i < input.count; i++) {
+      PImage src = input.data[i];
+      buffer.beginDraw();
+      buffer.noStroke();
+      for (int x = 0; x < src.width; x++) {
+        for (int y = 0; y < src.width; y++) {
+          buffer.fill(src.get(x,y));
+          buffer.rect(x*scale, y*scale, scale, scale);
+        }
+      }
+      output.addFrame(buffer.get());
+      buffer.endDraw();
+    }
+    input = null;
+    return output;
+  }
+}
+
+/*******************************************************************************
  * duplicates one frame into many
  */
 public class FrameDuplicator implements Modifier {
   int count = 5;
-
-  public FrameDuplicator(int count) {
-    this.count = count;
-  }
-
-  public FrameDuplicator() {
-  }
 
   public Frames modify(Frames input) {
     println("Duplicating frame...");
@@ -21,6 +46,68 @@ public class FrameDuplicator implements Modifier {
       output.addFrame(frame.get());
     }
     frame = null;
+    return output;
+  }
+}
+
+/*******************************************************************************
+ * doubles an image, side by side
+ */
+public class Doubler implements Modifier {
+
+  public Frames modify(Frames input) {
+    println("Doubling frames... ");
+
+    int width = input.width;
+    int height = input.height;
+
+    Frames output = new Frames(input.type, input.count, width*2, height);
+    PGraphics buffer = createGraphics(width*2, height);
+
+    // mirror each frame
+    for (int i = 0; i < input.count; i++) {
+      PImage src = input.data[i];
+      buffer.beginDraw();
+      buffer.image(src, 0, 0);
+      buffer.image(src, width, 0);
+      output.addFrame(buffer.get());
+      buffer.endDraw();
+    }
+    return output;
+  }
+}
+
+/*******************************************************************************
+ * mirrors an image side by side
+ */
+public class Mirrorer implements Modifier {
+  boolean reverse = false;
+
+  public Frames modify(Frames input) {
+    println("Mirroring frames... ");
+
+    int width = input.width;
+    int height = input.height;
+
+    Frames output = new Frames(input.type, input.count, width*2, height);
+    PGraphics buffer = createGraphics(width*2, height);
+
+    // mirror each frame
+    for (int i = 0; i < input.count; i++) {
+      PImage src = input.data[i];
+      buffer.beginDraw();
+      if (reverse) {
+        buffer.image(src, width, 0);
+        buffer.scale(-1, 1);
+        buffer.image(src, -width, 0);
+      } else {
+        buffer.image(src, 0, 0);
+        buffer.scale(-1, 1);
+        buffer.image(src, -width*2, 0);
+      }
+      output.addFrame(buffer.get());
+      buffer.endDraw();
+    }
     return output;
   }
 }

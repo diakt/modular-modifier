@@ -1,6 +1,7 @@
 import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.awt.Toolkit;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import javax.imageio.ImageIO;
 
@@ -11,7 +12,6 @@ import gifAnimation.*;
 public class FileHandler {
 
   PApplet parent;
-  GifMaker gifExport;
   boolean inProgress = false;
 
   public FileHandler(PApplet parent) {
@@ -51,42 +51,43 @@ public class FileHandler {
   }
 
   /*******************************************************************************
-   * converts a JPEG byte array into PImage
-   * http://processing.org/discourse/beta/num_1234546778.html
+   * converts a PImage into a JPEG byte array
    */
-  public PImage jpegBytesToFrame(byte[] input) {
-    Image awtImage;
-    Toolkit toolkit = Toolkit.getDefaultToolkit();
-    awtImage = toolkit.createImage(input);
-    return loadImageMT(awtImage);
+  public byte[] frameToJpegBytes(PImage input) {
+    try {
+      // copy RGB data from the PImage into a new BufferedImage
+      BufferedImage img = new BufferedImage(input.width, input.height, 2);
+      img.setRGB(0, 0, input.width, input.height, input.pixels, 0, input.width);
+
+      // save the BufferedImage into a JPEG-encoded byte array 
+      ByteArrayOutputStream output = new ByteArrayOutputStream();
+      ImageIO.write(img, "jpeg", output);
+      return output.toByteArray();
+    }
+    catch (Exception e) {
+      println("failed to convert PImage to JPEG");
+      return null;
+    }
   }
 
   /*******************************************************************************
-   * converts a PImage into a JPEG byte array
-   * partially from http://wiki.processing.org/index.php/Save_as_JPEG
-   * (by Yonas Sandbæk) 
+   * converts a JPEG byte array into PImage
    */
-  public byte[] frameToJpegBytes(PImage srcimg) {
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    BufferedImage img = new BufferedImage(srcimg.width, srcimg.height, 2);
-    img = (BufferedImage) createImage(srcimg.width, srcimg.height);
-    for (int i = 0; i < srcimg.width; i++)
-      for (int j = 0; j < srcimg.height; j++)
-        img.setRGB(i, j, srcimg.pixels[j * srcimg.width + i]);
+  public PImage jpegBytesToFrame(byte[] input) {
     try {
-      /* this is all from Java 6
-       JPEGImageEncoder encoder = JPEGCodec.createJPEGEncoder(out);
-       JPEGEncodeParam encpar = encoder.getDefaultJPEGEncodeParam(img);
-       encpar.setQuality(1, false);
-       encoder.setJPEGEncodeParam(encpar);
-       encoder.encode(img);
-       */
-      ImageIO.write(img, "jpeg", out);
+      // get raw RGB data from the JPEG
+      BufferedImage frame = ImageIO.read(new ByteArrayInputStream(input));
+      int[] rgbData = frame.getRGB(0, 0, frame.getWidth(), frame.getHeight(),
+          null, 0, frame.getWidth());
+
+      // copy that to a PImage
+      PImage output = new PImage(frame.getWidth(), frame.getHeight(), ARGB);
+      System.arraycopy(rgbData, 0, output.pixels, 0, rgbData.length);
+      return output;
     }
-    // why is an IOException thrown here?
     catch (Exception e) {
-      System.out.println(e);
+      println("failed to convert JPEG to PImage");
+      return null;
     }
-    return out.toByteArray();
   }
 }

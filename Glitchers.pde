@@ -1,20 +1,722 @@
+import java.io.*;
+
+/*******************************************************************************
+ * converts an image to ascii
+ */
+public class Asciifyer implements Modifier {
+  int longestSide = 80;
+  boolean drawBorder = false;
+  boolean noResize = false;
+
+  String font = "cmd"; // or c64
+  String colors = "ansi"; // or gameboy
+  // first color is used only as background unless this is false
+  boolean dontUseFirst = true;
+  // uses all combinations of colors on colors - overrides dontUseFirst
+  boolean useAllCombos = false;
+
+
+  // forces refreshing the caches, shouldn't be required except when debugging
+  boolean refreshCaches = false;
+
+  // reduces the bit-depth of colors that are matched
+  // allows the lookup cache to work more efficiently
+  // original bit depth is 8 per channel
+  // users shouldn't need to mess with this
+  int precisionBitReduction = 4;
+
+  int baseSize, cWidth, cHeight;
+  String fontName;
+  int startChar = 33;
+  int endChar = 126;
+  // int startChar = 0x2591;
+  // int endChar = 0x2593;
+  color[] palette;
+
+  Path cacheExportFolder = Paths.get(System.getProperty("user.home"), "Desktop", "cache");
+  Path colorCachePath, lookupCachePath;
+  PFont characterFont;
+  int charsCount, combinationsCount;
+  int width, height;
+  int[][] colorMap;
+  HashMap<Integer, Integer> lookupCache = new HashMap<Integer, Integer>();
+
+  boolean loadCaches() {
+    println("  attempting to load color cache...");
+    try {
+      File colorCacheFile = new File(colorCachePath.toString());
+      ObjectInputStream colorCacheInput = new ObjectInputStream(new FileInputStream(colorCacheFile));
+      colorMap = (int[][]) colorCacheInput.readObject();
+      colorCacheInput.close();
+    } catch (Exception e) {
+      return false;
+      //e.printStackTrace();
+    }
+    try {
+      File lookupCacheFile = new File(lookupCachePath.toString());
+      ObjectInputStream lookupCacheInput = new ObjectInputStream(new FileInputStream(lookupCacheFile));
+      lookupCache = (HashMap) lookupCacheInput.readObject();
+      lookupCacheInput.close();
+    } catch (Exception e) {
+      return false;
+      //e.printStackTrace();
+    }
+    return true;
+  }
+
+  void generateCaches() {
+    println("  saving color cache...");
+    try {
+
+      // create cache folder if it doesn't exist
+      File cacheFolderTemp = new File(cacheExportFolder.toString());
+      if (!cacheFolderTemp.exists()) {
+        cacheFolderTemp.mkdirs();
+      }
+    
+      // save existing color cache
+      File colorCacheFile = new File(colorCachePath.toString());
+      if (!colorCacheFile.exists()) {
+        colorCacheFile.createNewFile();
+      }
+      ObjectOutputStream colorCache = new ObjectOutputStream(new FileOutputStream(colorCacheFile));
+      colorCache.writeObject(colorMap);
+      colorCache.close();
+
+      // generate full lookup cache
+      int incrementAmount = 1 << precisionBitReduction;
+      for (int r = 0; r < 256; r += incrementAmount) {
+        println("    " + r);
+        for (int g = 0; g < 256; g += incrementAmount) {
+          for (int b = 0; b < 256; b += incrementAmount) {
+            color c = color(r, g, b);
+            int match = getClosestColor(c);
+            lookupCache.put(((r << 16) | (g << 8) | b), match);
+          }
+        }
+      }
+      // save it
+      File lookupCacheFile = new File(lookupCachePath.toString());
+      if (!lookupCacheFile.exists()) {
+        lookupCacheFile.createNewFile();
+      }
+      ObjectOutputStream lookupCacheOutput = new ObjectOutputStream(new FileOutputStream(lookupCacheFile));
+      lookupCacheOutput.writeObject(lookupCache);
+      lookupCacheOutput.close();
+    }
+    catch (Exception e) { e.printStackTrace(); }
+  }
+
+  void createColorMap() {
+    println("  color cache not found, generating new color map...");
+    colorMap = new int[combinationsCount][3];
+
+    PGraphics buffer = createGraphics(cWidth, cHeight);
+    buffer.beginDraw();
+    buffer.textFont(characterFont);
+    buffer.textAlign(LEFT, TOP);
+    buffer.noStroke();
+
+    // for each combination of character, foreground color, and background color
+    int iStart = (!useAllCombos && dontUseFirst) ? 1 : 0;
+    int iEnd = palette.length * charsCount;
+    if (useAllCombos) { iEnd *= palette.length; }
+    for (int i = iStart; i < iEnd; i++) {
+      drawBlock(buffer, 0, 0, i);
+      // get the image of the block
+      PImage cT = buffer.get(0, 0, cWidth, cHeight);
+      // now resize it to determine its average color
+      cT.resize(1, 1);
+      color c2 = cT.pixels[0];
+      // add its details to the color map
+      colorMap[i] = Utilities.roundTriplet(Utilities.xyzToLab(
+        Utilities.rgbToXyz(c2 >> 16 & 0xFF, c2 >> 8 & 0xFF, c2 & 0xFF)));
+    }
+
+    buffer.endDraw();
+    buffer = null;
+  }
+
+  void drawBlock(PGraphics buffer, int x, int y, int i) {
+    char c = (char) (startChar + (i % charsCount));
+    int bC = useAllCombos ? palette[i / (palette.length*charsCount)] : palette[0];
+    int fI = useAllCombos ? ((i % (palette.length*charsCount)) / charsCount) : (i / charsCount);
+    int fC = palette[fI];
+
+    buffer.fill(bC);
+    buffer.rect(x, y, cWidth, cHeight);
+    buffer.fill(fC);
+    buffer.text(c, x, y);
+  }
+
+  void drawBlockManual(PGraphics buffer, int x, int y, char c, int bC, int fC) {
+    buffer.fill(bC);
+    buffer.rect(x, y, cWidth, cHeight);
+    buffer.fill(fC);
+    buffer.text(c, x, y);
+  }
+
+  int getClosestColor(color c) {
+    int[] c1Int = Utilities.roundTriplet(Utilities.xyzToLab(Utilities.rgbToXyz(
+      c >> 16 & 0xFF, c >> 8 & 0xFF, c & 0xFF)));
+    int best = 999999999;
+    int bestI = 0;
+    int distance;
+    for (int i = useAllCombos ? 0 : (dontUseFirst ? charsCount : 0); i < combinationsCount; i++) {
+      distance = Utilities.labDistance(c1Int, colorMap[i]);
+      if (distance < best) {
+        best = distance;
+        bestI = i;
+      }
+    }
+    return bestI;
+  }
+
+  public Frames modify(Frames input) {
+    println("Asciifying frames... ");
+
+    if (drawBorder) { longestSide -= 2; }
+
+    // set up palette
+    if (colors == "ansi") {
+      // http://en.wikipedia.org/wiki/ANSI_escape_code#Colors
+      palette = new color[] {
+        color(0, 0, 0), // black
+        color(85, 85, 85), // dark grey
+        color(170, 170, 170), // grey
+        color(255, 255, 255), // white
+        color(170, 0, 0), // dark red
+        color(255, 85, 85), // red
+        color(255, 255, 85), // yellow
+        color(0, 170, 0), // dark green
+        color(85, 255, 85), // green
+        color(0, 170, 170), // dark cyan
+        color(85, 255, 255), // cyan
+        color(0, 0, 170), // dark blue
+        color(85, 85, 255), // blue
+        color(170, 0, 170), // dark magenta
+        color(255, 85, 255), // magenta
+        color(170, 85, 0)     // brown
+      };
+    }
+    else if (colors == "gameboy") {
+      palette = new color[] {
+        #9bbb0e,
+        #73a067,
+        #0f380e,
+        #356237
+      };
+    }
+    else {
+      println("  ERROR: invalid color set specified");
+      return input;
+    }
+
+    // set up font and character dimensions
+    if (font == "cmd") {
+      baseSize = 4;
+      cWidth = baseSize * 2;
+      cHeight = baseSize * 3;
+      fontName = "TerminalVector";
+    }
+    else if (font == "c64") {
+      baseSize = 16;
+      cWidth = baseSize;
+      cHeight = baseSize;
+      fontName = "C64 Pro Mono";
+    }
+    else {
+      println("  ERROR: invalid font specified");
+      return input;
+    }
+
+    // determine the output resolution
+    int originalWidth = input.getFrame(0).width;
+    int originalHeight = input.getFrame(0).height;
+    int w, h;
+    if (!noResize) {
+      float scale = 0; 
+      if (originalWidth > originalHeight) {
+        scale = longestSide * 1.0 / originalWidth;
+      } else {
+        scale = longestSide * 1.0 / originalHeight;
+      }
+      w = floor(originalWidth * scale); 
+      h = floor(originalHeight * scale * cWidth / cHeight);
+    } else {
+      w = originalWidth;
+      h = originalHeight;
+    }
+
+    // set up the output frames array
+    int width = (w + (drawBorder ? 2 : 0)) * cWidth;
+    int height = (h + (drawBorder ? 2 : 0)) * cHeight;
+    Frames output = new Frames(input.type, input.count, width, height);
+
+    // set up the font
+    characterFont = createFont(fontName, cHeight, false);
+
+    // set up the color map and blocks palette
+    charsCount = endChar + 1 - startChar;
+    combinationsCount = charsCount * palette.length;
+    if (useAllCombos) {
+      combinationsCount *= palette.length;
+    }
+    println("  There are ~" + combinationsCount + " possible color shades.");
+
+    // process the color and lookup caches
+    String colorCacheFilename = "colorcache";
+    String lookupCacheFilename = "lookupcache";
+
+    String cacheFilenameSuffix = "-" + font + "-" + colors;
+    if (useAllCombos) { cacheFilenameSuffix += "-useall"; }
+    else if (!dontUseFirst) { cacheFilenameSuffix += "-usefirst"; }
+    cacheFilenameSuffix += ".dat";
+
+    colorCachePath = Paths.get(cacheExportFolder.toString(), colorCacheFilename + cacheFilenameSuffix);
+    lookupCachePath = Paths.get(cacheExportFolder.toString(), lookupCacheFilename + cacheFilenameSuffix);
+    if (refreshCaches || !loadCaches()) {
+      createColorMap(); 
+      generateCaches();
+    }
+
+    // iterate over frames
+    for (int f = 0; f < input.count; f++) {
+      PImage currentFrame = input.getFrame(f);
+      if (!noResize) {
+        currentFrame.resize(w, h);
+      }
+      PGraphics buffer = createGraphics(width, height);
+      buffer.beginDraw();
+      buffer.textFont(characterFont);
+      buffer.textAlign(LEFT, TOP);
+      buffer.noStroke();
+
+      // iterate over pixels
+      for (int j = 0; j < h; j++) {
+        for (int i = 0; i < w; i++) {
+          int cOriginal = currentFrame.pixels[j*w+i];
+          if (alpha(cOriginal) == 255) {
+            // reduce precision if desired
+            if (precisionBitReduction > 0) {
+              int r = (cOriginal >> 16) & 0xFF;
+              int g = (cOriginal >> 8) & 0xFF;
+              int b = cOriginal & 0xFF;
+              r = (r >> precisionBitReduction) << precisionBitReduction;
+              g = (g >> precisionBitReduction) << precisionBitReduction;
+              b = (b >> precisionBitReduction) << precisionBitReduction;
+              cOriginal = ((r << 16) | (g << 8) | b);
+            }
+            int paletteIndex = 0;
+            // check the color-mapping cache first
+            if (lookupCache.containsKey(cOriginal)) {
+              paletteIndex = lookupCache.get(cOriginal);
+            } else {
+              //paletteIndex = getClosestColor(cOriginal);
+              //lookupCache.put(cOriginal, paletteIndex);
+            }
+            drawBlock(buffer, (i + (drawBorder ? 1 : 0)) * cWidth,
+              (j + (drawBorder ? 1 : 0)) * cHeight, paletteIndex);
+          }
+        }
+      }
+      if (drawBorder) {
+        int bC = palette[0];
+        int fC = palette[3];
+        // horizontal
+        for (int x = 1; x <= w; x++) {
+          char c = (char) 0x2550;
+          drawBlockManual(buffer, x*cWidth, 0, c, bC, fC);
+          drawBlockManual(buffer, x*cWidth, (h+1)*cHeight, c, bC, fC);
+        }
+        // vertical
+        for (int y = 1; y <= h; y++) {
+          char c = (char) 0x2551;
+          drawBlockManual(buffer, 0, y*cHeight, c, bC, fC);
+          drawBlockManual(buffer, (w+1)*cWidth, y*cHeight, c, bC, fC);
+        }
+        // corners
+        drawBlockManual(buffer, 0, 0, (char) 0x2554, bC, fC);
+        drawBlockManual(buffer, 0, (h+1)*cHeight, (char) 0x255A, bC, fC);
+        drawBlockManual(buffer, (w+1)*cWidth, 0, (char) 0x2557, bC, fC);
+        drawBlockManual(buffer, (w+1)*cWidth, (h+1)*cHeight, (char) 0x255D, bC, fC);
+      }
+      output.setFrame(f, buffer.get());
+      buffer.endDraw();
+      buffer = null;
+      println("  INFO: processed frame " + f);
+    }
+    return output;
+  }
+}
+
+/*******************************************************************************
+ * palette-cycles a frame based on brightness
+ */
+public class PaletteCycler implements Modifier {
+  int steps = 16;
+  boolean keepBlack = true;
+  int brightnessAdjust = 0;
+  
+  int[] palette = new int[] {
+    #fdfc2a,#fecf21,#d2b529,#dc7b2c,
+    #f27535,#e25a34,#ef2474,#f62388,
+    #f724b1,#c518b0,#182fdd,#24b2d6,
+    #01a8a1,#49ff2f,#befe2e,#cdfc00
+  };
+
+  public Frames modify(Frames input) {
+    println("Palette cycling frames...");
+    if (input.count % palette.length != 0) {
+      println("  NOTE: frame count (" + input.count +
+        ") should be a multiple of palette color count (" + palette.length +
+        ")");
+    }
+
+    int interval = floor(256 / steps);
+
+    // cycle each frame
+    for (int i = 0; i < input.count; i++) {
+      PImage frame = input.getFrame(i);
+      for (int p = 0; p < input.width * input.height; p++) {
+        // skip transparent pixels
+        if (alpha(frame.pixels[p]) < 128) { continue; }
+
+        int grey = round(brightness(frame.pixels[p]));
+        grey += brightnessAdjust;
+        grey = constrain(grey, 0, 255);
+        grey = grey - (grey % interval);
+        
+        // replace with a cycled color if it's not a black we're preserving
+        if (!(keepBlack && grey == 0)) { 
+          int paletteIndex = (grey / interval) % palette.length;
+          paletteIndex = (paletteIndex + i) % palette.length;
+          frame.pixels[p] = palette[paletteIndex];
+        }
+        // instead of keeping original color, always force black
+        else {
+          frame.pixels[p] = color(0);
+        }
+      }
+      input.setFrame(i, frame);
+    }
+    
+    return input;
+  }
+}
+
+/*******************************************************************************
+ * creates polar projection of image
+ * https://processing.org/discourse/beta/num_1265541880.html
+ */
+public class Polarizer implements Modifier {
+  int diameter = 600;
+  boolean fill = true;
+  boolean invert = false;
+  float rotate = HALF_PI;
+
+  public Frames modify(Frames input) {
+    println("Polar-izing frames... ");
+
+    int srcWidth = input.width;
+    int srcHeight = input.height;
+    int destWidth = diameter;
+    int destHeight = diameter;    
+
+    Frames output = new Frames(input.type, input.count, destWidth, destHeight);
+
+    // polar-ize each frame
+    for (int i = 0; i < input.count; i++) {
+      PImage src = input.data[i];
+      PImage des = createImage(destWidth, destHeight, ARGB);
+
+      // fill each destination pixel
+      for (int destX = -destWidth/2; destX < destWidth/2; destX++) {
+        for (int destY = -destHeight/2; destY < destHeight/2; destY++) {
+
+          // angle of this destination pixel from center
+          float a = atan2(destY, destX);
+          // adjust the angle to rotate the output
+          a = (a+TWO_PI+rotate) % TWO_PI;
+
+          // distance of this destination pixel from center
+          float r = sqrt(destX*destX+destY*destY);
+
+          // maximum distance of the ellipse at this angle
+          float maxR = (destWidth/2*destHeight/2) / sqrt(
+            pow(destWidth/2, 2)*pow(sin(a-rotate),2)
+            + pow(destHeight/2, 2)*pow(cos(a-rotate),2)
+          );
+          if (fill) { maxR *= 1.42; }
+
+          int srcX = int(map(a, 0, TWO_PI, 0, srcWidth-1));
+          int srcY = int(map(r, 0, maxR, 0, srcHeight-1));
+          if (invert) { srcY = (srcHeight-1) - srcY; }
+          else { srcX = (srcWidth-1) - srcX; }
+          des.set(destX+destWidth/2, destY+destHeight/2, src.get(srcX, srcY));
+        }
+      }
+
+      output.addFrame(des);
+    }
+    return output;
+  }
+}
+
+/*******************************************************************************
+ * creates polar spiral projection of image
+ */
+public class Spiralizer implements Modifier {
+  int diameter = 600;
+  boolean invert = false;
+  int spiralTightness = 10;
+  float stretch = 1;
+
+  float e = 2.71828182845904523;
+  float pythag(float x, float y) {
+    return sqrt(x*x+y*y);
+  }
+
+  float spiralR(float a) {
+    float x = pow(e, a/spiralTightness)*cos(a);
+    float y = pow(e, a/spiralTightness)*sin(a);
+    return pythag(x, y);
+  }
+
+  public Frames modify(Frames input) {
+    println("Spiralizing frames... ");
+
+    int srcWidth = input.width;
+    int srcHeight = input.height;
+    int destWidth = diameter;
+    int destHeight = diameter;    
+
+    Frames output = new Frames(input.type, input.count, destWidth, destHeight);
+
+    long startTime = System.currentTimeMillis();
+    int[][][] pixelLookup = new int[output.width][output.height][2];
+
+
+    for (int xO = 0; xO < output.width; xO++) {
+      for (int yO = 0; yO < output.height; yO++) {
+        int x = xO - output.width/2;
+        int y = yO - output.height/2;
+        float rP = pythag(x, y);
+        float aP = (atan2(y, x) + TWO_PI) % TWO_PI;
+
+        float a1 = aP;
+        float a2;
+        float r1 = 0;
+        float r2 = 0;
+        for (int i = 0; i < spiralTightness*1.5; i++) {
+          a2 = a1 + TWO_PI;
+          r1 = spiralR(a1);
+          r2 = spiralR(a2);
+          if (r1 <= rP && rP <= r2) {
+            break;
+          }
+          a1 = a2;
+        }
+        
+        int srcX = round(pow(log(a1),1.2)*spiralTightness/stretch*PI*input.width % input.width);
+        srcX = constrain(srcX, 0, input.width-1);
+        int srcY = round(map(rP, r1, r2, 0, input.height));
+        srcY = constrain(srcY, 0, input.height-1);
+
+        if (invert) { srcY = (input.height-1)-srcY; }
+        else { srcX = (input.width-1)-srcX; }
+
+        pixelLookup[xO][yO] = new int[] {srcX, srcY};
+      }
+    }
+    
+    println("  INFO: transform lookup completed in " + (System.currentTimeMillis() - startTime) + "ms");
+    
+    // spiralize each frame
+    for (int i = 0; i < input.count; i++) {
+      PImage src = input.data[i];
+      PImage des = createImage(destWidth, destHeight, ARGB);
+
+      for (int xO = 0; xO < output.width; xO++) {
+        for (int yO = 0; yO < output.height; yO++) {
+          int[] lookup = pixelLookup[xO][yO];
+          des.set(xO, yO, src.get(lookup[0], lookup[1]));
+        }
+      }
+
+      output.addFrame(des);
+    }
+    return output;
+  }
+}
+
+/*******************************************************************************
+ * applies a slit-scan effect to a set of animated frames
+ */
+public class SlitScanner implements Modifier {
+  boolean vertical = false;
+  boolean reverse = false;
+  boolean useMask = false;
+  int stripsPerFrame = 1;
+
+  private PImage generateMask(int width, int height, float step, boolean reverse) {
+    PGraphics buffer = createGraphics(width, height);
+    buffer.noSmooth();
+    buffer.beginDraw();
+    buffer.ellipseMode(CENTER);
+    buffer.noStroke();
+    int largerDimension = max(width, height);
+    int i = round(largerDimension * 1.5);
+    while (i > 1) {
+      // linear, repeating
+      //float brightness = (i*1.0/step % 255);
+      // sinusoidal
+      float brightness = (cos((i*1.0/step % 255) * TWO_PI / 255) / 2 + 0.5) * 255;
+      // triangle (ping-pong)
+      //float brightness = 255 - abs((i*1.0/step) % (2*255) - 255);
+
+      if (reverse) {
+        brightness = 255 - brightness;
+      }
+      buffer.fill(brightness);
+      buffer.ellipse(width/2, height/2, i, i);
+      i--;
+    }
+    PImage output = buffer.get();
+    //output.save("test.png");
+    buffer.endDraw();
+    return output;
+  }
+
+  public Frames modify(Frames input) {
+    println("Applying slit-scan effect...");
+
+    int width = input.width;
+    int height = input.height;
+    int strips = stripsPerFrame * input.count;
+    int[] divided;
+
+    Frames output = new Frames(input.type, input.count, width, height);
+
+    // new way - use a mask
+    if (useMask) {
+      PImage mask = generateMask(width, height, 5, false);
+      //PImage mask = loadImage("mask9.png");
+      //mask.resize(width, height);
+
+      for (int i = 0; i < input.count; i++) {
+        output.addFrame(createImage(width, height, ARGB));
+      }
+      for (int pixel = 0; pixel < mask.pixels.length; pixel++) {
+        color level = mask.pixels[pixel] & 0xFF;
+        for (int frame = 0; frame < output.count; frame++) {
+          output.data[frame].pixels[pixel] = input.data[(frame+(level/2)) % input.count].pixels[pixel];
+        }
+      }
+    }
+
+    // traditional method
+    else {
+      // vertical
+      if (vertical) {
+        if (strips > height) {
+          strips = height;
+        }
+        divided = divideEvenly(height, strips);
+      }
+      // horizontal
+      else {
+        if (strips > width) {
+          strips = width;
+        }
+        divided = divideEvenly(width, strips);
+      }
+
+      int eachLength = divided[0];
+      int extraRemaining = divided[1];
+      int extraMod = divided[2];
+      for (int i = 0; i < input.count; i++) {
+        PImage frame = createImage(width, height, ARGB);
+        int current = 0;
+        int amount = 0;
+        int x = 0;
+        int y = 0; 
+        int w = 0;
+        int h = 0;
+        for (int j = 0; j < strips; j++) {
+          amount = eachLength;
+          /*if (extraRemaining > 0) {
+           amount++;
+           extraRemaining--;
+           }*/
+          if (extraRemaining > 0 && (j + 1) % extraMod == 0) {
+            /*if (i == 0) {
+             println("here is a wider one");
+             }*/
+            amount++;
+          }
+          if (!vertical && !reverse) {
+            x = width - (current + amount);
+            y = 0;
+            w = amount;
+            h = height;
+          } else if (!vertical && reverse) {
+            x = current;
+            y = 0;
+            w = amount;
+            h = height;
+          } else if (vertical && !reverse) {
+            x = 0;
+            y = height - (current + amount);
+            w = width;
+            h = amount;
+          } else if (vertical && reverse) {
+            x = 0;
+            y = current;
+            w = width;
+            h = amount;
+          }
+          /*if (i == 0) {
+           println(j, current, amount);
+           }*/
+          frame.copy(input.data[(i+j) % input.count], x, y, w, h, x, y, w, h);
+          current += amount;
+        }
+        output.addFrame(frame);
+      }
+    }
+
+    // return what we got
+    return output;
+  }
+
+  /*******************************************************************************
+   * returns how many of the count each part should have,
+   * how many parts should have 1 extra,
+   * and the distance between the parts with extra
+   */
+  private int[] divideEvenly(int count, int parts) {
+    int[] result = new int[3];
+    float divide = count * 1.0 / parts;
+    result[0] = floor(divide);
+    result[1] = count - (result[0] * parts);
+    if (result[1] > 0) {
+      result[2] = parts / result[1];
+    } else {
+      result[2] = 0;
+    }
+    //println(count, parts, result[0], result[1], result[2]);
+    return result;
+  }
+}
+
 /*******************************************************************************
  * sorts/smears pixels
  */
 public class PixelSorter implements Modifier {
-  int threshold, smearFactor, smearIncrease;
-
-  public PixelSorter() {
-    threshold = 75;
-    smearFactor = 5;
-    smearIncrease = 1;
-  }
-
-  public PixelSorter(int threshold, int smearFactor, int smearIncrease) {
-    this.threshold = threshold;
-    this.smearFactor = smearFactor;
-    this.smearIncrease = smearIncrease;
-  }
+  int threshold = 75;
+  int smearFactor = 5;
+  int smearIncrease = 1;
 
   public Frames modify(Frames input) {
     println("Sorting pixels... ");
@@ -60,22 +762,10 @@ public class PixelSorter implements Modifier {
  * moves random blocks of random frames around
  */
 public class BoxSwapper implements Modifier {
-  int glitchPercent, maxGlitches, maxGlitchSize, maxGlitchDistance;
-
-  public BoxSwapper() {
-    glitchPercent = 50;
-    maxGlitches = 10;
-    maxGlitchSize = 50;
-    maxGlitchDistance = 25;
-  }
-
-  public BoxSwapper(int glitchPercent, int maxGlitches, 
-  int maxGlitchSize, int maxGlitchDistance) {
-    this.glitchPercent = glitchPercent;
-    this.maxGlitches = maxGlitches;
-    this.maxGlitchSize = maxGlitchSize;
-    this.maxGlitchDistance = maxGlitchDistance;
-  }
+  int glitchPercent = 50;
+  int maxGlitches = 10;
+  int maxGlitchSize = 50;
+  int maxGlitchDistance = 25;
 
   public Frames modify(Frames input) {
     println("Glitching frames (block moving)... ");
@@ -120,16 +810,8 @@ public class BoxSwapper implements Modifier {
         int block2Y = block1Y + distance;
 
         // make sure we're not going out of bounds
-        if (block2X < 0) {
-          block2X +=  blockWidth;
-        } else if (block2X + blockWidth >= width) {
-          block2X -= blockWidth;
-        }
-        if (block2Y < 0) {
-          block2Y +=  blockHeight;
-        } else if (block2Y + blockHeight >= height) {
-          block2Y -= blockHeight;
-        }
+        block2X = (block2X + width) % width;
+        block2Y = (block2Y + height) % height;
 
         // finally, do the swapping
         PImage frame = input.getFrame(frameNumber);
@@ -153,19 +835,9 @@ public class BoxSwapper implements Modifier {
  * does jpeg-corruption (the #notepad trick") glitching on random frames
  */
 public class JpegGlitcher implements Modifier {
-  int glitchPercent, maxCuts, maxCutLength;
-
-  public JpegGlitcher() {
-    glitchPercent = 20;
-    maxCuts = 4;
-    maxCutLength = 10;
-  }
-
-  public JpegGlitcher(int glitchPercent, int maxCuts, int maxCutLength) {
-    this.glitchPercent = glitchPercent;
-    this.maxCuts = maxCuts;
-    this.maxCutLength = maxCutLength;
-  }
+  int glitchPercent = 20;
+  int maxCuts = 4;
+  int maxCutLength = 10;
 
   public Frames modify(Frames input) {
     println("Glitching frames (JPEG corruption)...");
@@ -178,12 +850,25 @@ public class JpegGlitcher implements Modifier {
     int glitchedFrames = round(input.count * glitchPercent / 100);
     for (int i = 0; i < glitchedFrames; i++) {
       int frameNumber = random.nextInt(input.count);
-      byte[] frameBytes = fileH.frameToJpegBytes(input.getFrame(frameNumber));
+      PImage glitchedFrame = glitchFrame(input.getFrame(frameNumber));
+      if (glitchedFrame != null) { input.setFrame(frameNumber, glitchedFrame); }
+    }
+    return input;
+  }
+
+  private PImage glitchFrame(PImage inputFrame) {
+
+    // because some JPEG glitches can destroy the file, we allow a few attempts
+    for (int attempts = 0; attempts < 3; attempts++) {
+
+      byte[] frameBytes = fileH.frameToJpegBytes(inputFrame);
+
       // we can't cut from an array, so convert it first
       ArrayList<Byte> editableBytes = new ArrayList<Byte>();
       for (byte b : frameBytes) {
         editableBytes.add(b);
       }
+
       // do each glitch
       for (int j = 0; j < random.nextInt (maxCuts) + 1; j++) {
         // assume the header is over by 512 bytes in
@@ -193,17 +878,24 @@ public class JpegGlitcher implements Modifier {
           editableBytes.remove(cutStart);
         }
       }
+
       // convert back to byte array
       frameBytes = new byte[editableBytes.size()];
       int l = 0;
       for (byte b : editableBytes) {
         frameBytes[l++] = b;
       }
-      input.setFrame(frameNumber, fileH.jpegBytesToFrame(frameBytes));
-      frameBytes = null;
-      editableBytes = null;
+
+      // convert back to PImage
+      PImage outputFrame = fileH.jpegBytesToFrame(frameBytes);
+      if (outputFrame != null) {
+        return outputFrame;
+      } else {
+        println("  NOTE: temporary frame was destroyed by JPEG glitch, " +
+          "trying again...");
+      }
     }
-    return input;
+    return null;
   }
 }
 
@@ -212,17 +904,8 @@ public class JpegGlitcher implements Modifier {
  * shuffles RGB subframes between adjacent frames
  */
 public class RgbShuffler implements Modifier {
-  int shufflePercent, maxShuffleDistance;
-
-  public RgbShuffler() {
-    shufflePercent = 40;
-    maxShuffleDistance = 2;
-  }
-
-  public RgbShuffler(int shufflePercent, int maxShuffleDistance) {
-    this.shufflePercent = shufflePercent;
-    this.maxShuffleDistance = maxShuffleDistance;
-  }
+  int shufflePercent = 40;
+  int maxShuffleDistance = 2;
 
   public Frames modify(Frames input) {
     println("Shuffling RGB frames...");
@@ -252,122 +935,3 @@ public class RgbShuffler implements Modifier {
     return input;
   }
 }
-
-/*******************************************************************************
- * applies a slit-scan effect to a set of animated frames
- */
-public class SlitScanner implements Modifier {
-  boolean vertical, reverse;
-  int stripsPerFrame;
-
-  public SlitScanner() {
-    vertical = false;
-    reverse = false;
-    stripsPerFrame = 1;
-  }
-
-  public SlitScanner(boolean vertical, boolean reverse, int stripsPerFrame) {
-    this.vertical = vertical;
-    this.reverse = reverse;
-    this.stripsPerFrame = stripsPerFrame;
-  }
-
-  public Frames modify(Frames input) {
-    println("Applying slit-scan effect...");
-
-    int width = input.width;
-    int height = input.height;
-    int strips = stripsPerFrame * input.count;
-    int[] divided;
-
-    // vertical
-    if (vertical) {
-      if (strips > height) {
-        strips = height;
-      }
-      divided = divideEvenly(height, strips);
-    }
-    // horizontal
-    else {
-      if (strips > width) {
-        strips = width;
-      }
-      divided = divideEvenly(width, strips);
-    }
-
-    int eachLength = divided[0];
-    int extraRemaining = divided[1];
-    int extraMod = divided[2];
-    Frames output = new Frames(input.type, input.count, width, height);
-    for (int i = 0; i < input.count; i++) {
-      PImage frame = createImage(width, height, RGB);
-      int current = 0;
-      int amount = 0;
-      int x = 0;
-      int y = 0; 
-      int w = 0;
-      int h = 0;
-      for (int j = 0; j < strips; j++) {
-        amount = eachLength;
-        /*if (extraRemaining > 0) {
-         amount++;
-         extraRemaining--;
-         }*/
-        if (extraRemaining > 0 && (j + 1) % extraMod == 0) {
-          /*if (i == 0) {
-           println("here is a wider one");
-           }*/
-          amount++;
-        }
-        if (!vertical && !reverse) {
-          x = width - (current + amount);
-          y = 0;
-          w = amount;
-          h = height;
-        } else if (!vertical && reverse) {
-          x = current;
-          y = 0;
-          w = amount;
-          h = height;
-        } else if (vertical && !reverse) {
-          x = 0;
-          y = height - (current + amount);
-          w = width;
-          h = amount;
-        } else if (vertical && reverse) {
-          x = 0;
-          y = current;
-          w = width;
-          h = amount;
-        }
-        /*if (i == 0) {
-         println(j, current, amount);
-         }*/
-        frame.copy(input.data[(i+j) % input.count], x, y, w, h, x, y, w, h);
-        current += amount;
-      }
-      output.addFrame(frame);
-    }
-    return output;
-  }
-
-  /*******************************************************************************
-   * returns how many of the count each part should have,
-   * how many parts should have 1 extra,
-   * and the distance between the parts with extra
-   */
-  private int[] divideEvenly(int count, int parts) {
-    int[] result = new int[3];
-    float divide = count * 1.0 / parts;
-    result[0] = floor(divide);
-    result[1] = count - (result[0] * parts);
-    if (result[1] > 0) {
-      result[2] = parts / result[1];
-    } else {
-      result[2] = 0;
-    }
-    //println(count, parts, result[0], result[1], result[2]);
-    return result;
-  }
-}
-
