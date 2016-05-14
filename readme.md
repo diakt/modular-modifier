@@ -2,6 +2,8 @@
 
 ## Description
 
+Note: this tool is mostly superseded by an HTML5 version, [on my website](http://ianharmon.com/projects/modular-modifier/). Additionally, some of this documentation is outdated.
+
 Modular Modifier is a Processing script that allows you to chain together procedural/glitch effects on an input image/GIF. The output depends on the order and settings of each effect. For example, you can split a GIF into RGB subframes, then apply a glitch effect to those subframes before putting the whole thing back together again. Or you can convert an image to ASCII then spiral-project it. Or you can palette-cycle a GIF and then slit-scan it. There are lots of possibilities!
 
 ![](example-input.gif)

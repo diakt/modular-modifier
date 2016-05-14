@@ -19,7 +19,7 @@ Modifier[] modifiers = new Modifier[] {
   //new Doubler(),
   //new Mirrorer() {{ reverse = false; }},
   //new FrameDuplicator() {{ count = 16; }},
-  //new PaletteCycler() {{ steps = 16; keepBlack = true; brightnessAdjust = 0; }},
+  //new PaletteCycler() {{ palette = "retro"; steps = 16; reverse = true; keepBlack = true; brightnessAdjust = 0; }},
   //new SlitScanner() {{ vertical = true; reverse = false; stripsPerFrame = 8; }}, 
   //new SlitScanner() {{ useMask = true; stripsPerFrame = 1; }},
   //new Polarizer() {{ diameter = 800; fill = true; }},  

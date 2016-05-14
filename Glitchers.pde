@@ -48,7 +48,8 @@ public class Asciifyer implements Modifier {
       ObjectInputStream colorCacheInput = new ObjectInputStream(new FileInputStream(colorCacheFile));
       colorMap = (int[][]) colorCacheInput.readObject();
       colorCacheInput.close();
-    } catch (Exception e) {
+    } 
+    catch (Exception e) {
       return false;
       //e.printStackTrace();
     }
@@ -57,7 +58,8 @@ public class Asciifyer implements Modifier {
       ObjectInputStream lookupCacheInput = new ObjectInputStream(new FileInputStream(lookupCacheFile));
       lookupCache = (HashMap) lookupCacheInput.readObject();
       lookupCacheInput.close();
-    } catch (Exception e) {
+    } 
+    catch (Exception e) {
       return false;
       //e.printStackTrace();
     }
@@ -73,7 +75,7 @@ public class Asciifyer implements Modifier {
       if (!cacheFolderTemp.exists()) {
         cacheFolderTemp.mkdirs();
       }
-    
+
       // save existing color cache
       File colorCacheFile = new File(colorCachePath.toString());
       if (!colorCacheFile.exists()) {
@@ -104,7 +106,9 @@ public class Asciifyer implements Modifier {
       lookupCacheOutput.writeObject(lookupCache);
       lookupCacheOutput.close();
     }
-    catch (Exception e) { e.printStackTrace(); }
+    catch (Exception e) { 
+      e.printStackTrace();
+    }
   }
 
   void createColorMap() {
@@ -120,7 +124,9 @@ public class Asciifyer implements Modifier {
     // for each combination of character, foreground color, and background color
     int iStart = (!useAllCombos && dontUseFirst) ? 1 : 0;
     int iEnd = palette.length * charsCount;
-    if (useAllCombos) { iEnd *= palette.length; }
+    if (useAllCombos) { 
+      iEnd *= palette.length;
+    }
     for (int i = iStart; i < iEnd; i++) {
       drawBlock(buffer, 0, 0, i);
       // get the image of the block
@@ -175,7 +181,9 @@ public class Asciifyer implements Modifier {
   public Frames modify(Frames input) {
     println("Asciifying frames... ");
 
-    if (drawBorder) { longestSide -= 2; }
+    if (drawBorder) { 
+      longestSide -= 2;
+    }
 
     // set up palette
     if (colors == "ansi") {
@@ -198,16 +206,14 @@ public class Asciifyer implements Modifier {
         color(255, 85, 255), // magenta
         color(170, 85, 0)     // brown
       };
-    }
-    else if (colors == "gameboy") {
+    } else if (colors == "gameboy") {
       palette = new color[] {
-        #9bbb0e,
-        #73a067,
-        #0f380e,
+        #9bbb0e, 
+        #73a067, 
+        #0f380e, 
         #356237
       };
-    }
-    else {
+    } else {
       println("  ERROR: invalid color set specified");
       return input;
     }
@@ -218,14 +224,12 @@ public class Asciifyer implements Modifier {
       cWidth = baseSize * 2;
       cHeight = baseSize * 3;
       fontName = "TerminalVector";
-    }
-    else if (font == "c64") {
+    } else if (font == "c64") {
       baseSize = 16;
       cWidth = baseSize;
       cHeight = baseSize;
       fontName = "C64 Pro Mono";
-    }
-    else {
+    } else {
       println("  ERROR: invalid font specified");
       return input;
     }
@@ -269,8 +273,11 @@ public class Asciifyer implements Modifier {
     String lookupCacheFilename = "lookupcache";
 
     String cacheFilenameSuffix = "-" + font + "-" + colors;
-    if (useAllCombos) { cacheFilenameSuffix += "-useall"; }
-    else if (!dontUseFirst) { cacheFilenameSuffix += "-usefirst"; }
+    if (useAllCombos) { 
+      cacheFilenameSuffix += "-useall";
+    } else if (!dontUseFirst) { 
+      cacheFilenameSuffix += "-usefirst";
+    }
     cacheFilenameSuffix += ".dat";
 
     colorCachePath = Paths.get(cacheExportFolder.toString(), colorCacheFilename + cacheFilenameSuffix);
@@ -315,7 +322,7 @@ public class Asciifyer implements Modifier {
               //paletteIndex = getClosestColor(cOriginal);
               //lookupCache.put(cOriginal, paletteIndex);
             }
-            drawBlock(buffer, (i + (drawBorder ? 1 : 0)) * cWidth,
+            drawBlock(buffer, (i + (drawBorder ? 1 : 0)) * cWidth, 
               (j + (drawBorder ? 1 : 0)) * cHeight, paletteIndex);
           }
         }
@@ -354,44 +361,141 @@ public class Asciifyer implements Modifier {
  * palette-cycles a frame based on brightness
  */
 public class PaletteCycler implements Modifier {
+  String palette = "retro";
   int steps = 16;
+  boolean reverse = false;
   boolean keepBlack = true;
   int brightnessAdjust = 0;
-  
-  int[] palette = new int[] {
-    #fdfc2a,#fecf21,#d2b529,#dc7b2c,
-    #f27535,#e25a34,#ef2474,#f62388,
-    #f724b1,#c518b0,#182fdd,#24b2d6,
-    #01a8a1,#49ff2f,#befe2e,#cdfc00
+
+  // palette stops are 0 to 1000 instead of 0.0 to 1.0
+  HashMap<String, int[][]> palettes = new HashMap<String, int[][]>() {
+    {
+  put("rainbow", new int[][] {
+        {0, #ff0000}, 
+        {150, #ff00ff}, 
+        {330, #0000ff}, 
+        {490, #00ffff}, 
+        {670, #00ff00}, 
+        {840, #ffff00},
+        {1000, #ff0000}
+        });
+  put("retro", new int[][] {
+        {0, #cdfc00}, 
+        {67, #fdfc2a}, 
+        {267, #f27535}, 
+        {400, #ef2474}, 
+        {533, #f724b1}, 
+        {667, #2f44e2}, 
+        {800, #24b2d6}, 
+        {933, #befe2e}, 
+        {1000, #cdfc00}
+        });
+      put("cga", new int[][] {
+        {0, #23cdcd}, 
+        {62, #23cdcd}, 
+        {63, #55ffff}, 
+        {187, #55ffff}, 
+        {188, #23cdcd}, 
+        {249, #23cdcd}, 
+        {250, #000000}, 
+        {499, #000000}, 
+        {500, #cd23cd}, 
+        {562, #cd23cd}, 
+        {563, #ff55ff}, 
+        {687, #ff55ff}, 
+        {688, #cd23cd}, 
+        {749, #cd23cd}, 
+        {750, #000000}
+        });
+      put("strobe", new int[][] {
+        {0, #ffffff}, 
+        {400, #ffffff}, 
+        {500, #000000}
+        });
+      put("red", new int[][] {
+        {0, #000000}, 
+        {375, #cc0000}, 
+        {750, #000000}
+        });
+      put("green", new int[][] {
+        {0, #000000}, 
+        {375, #00cc00}, 
+        {750, #000000}
+        });
+    }
   };
+
+  int interpolate(float portion, int color1, int color2) {
+    //colorMode(HSB);
+    float r = red(color1) + portion * (red(color2)-red(color1));
+    float g = green(color1) + portion * (green(color2)-green(color1)); 
+    float b = blue(color1) + portion * (blue(color2)-blue(color1));
+    color c = color(r, g, b);
+    //colorMode(RGB);
+    return c;
+  }
+
+  int getGradientColor(int[][] gradient, float portion) {
+    portion *= 1000;
+    for (int i = 0; i < gradient.length; i++) {
+      // point is before the first gradient stop
+      if (i == 0 && portion <= gradient[i][0]) {
+        return gradient[i][1];
+      }
+      // point is after the first gradient stop
+      else if (i == gradient.length-1 && portion >= gradient[i][0]) {
+        return gradient[i][1];
+      } else if (i < gradient.length-1 &&
+        gradient[i][0] <= portion && portion <= gradient[i+1][0]) {
+        float mapped = map(portion, gradient[i][0], gradient[i+1][0], 0, 1.0);
+        return interpolate(mapped, gradient[i][1], gradient[i+1][1]);
+      }
+    }
+    return 0;
+  }
+
+  int[] generateTrimmedPalette(int[][] selectedPalette, int count) {
+    int[] trimmedPalette = new int[count];
+    for (int i = 0; i < count; i++) {
+      trimmedPalette[i] = getGradientColor(selectedPalette, i * 1.0 / count);
+    }
+    return trimmedPalette;
+  }
 
   public Frames modify(Frames input) {
     println("Palette cycling frames...");
-    if (input.count % palette.length != 0) {
-      println("  NOTE: frame count (" + input.count +
-        ") should be a multiple of palette color count (" + palette.length +
-        ")");
+    if (steps < 2) {
+      steps = 2;
+      println("  NOTE: there cannot be fewer than 2 steps");
+    }
+    if (steps > 256) {
+      steps = 256;
+      println("  NOTE: there cannot be more than 256 steps");
     }
 
-    int interval = floor(256 / steps);
+    int[] trimmedPalette = generateTrimmedPalette(palettes.get(palette), input.count);
+    int interval = floor(256 * 1.0 / steps);
 
     // cycle each frame
     for (int i = 0; i < input.count; i++) {
       PImage frame = input.getFrame(i);
       for (int p = 0; p < input.width * input.height; p++) {
         // skip transparent pixels
-        if (alpha(frame.pixels[p]) < 128) { continue; }
+        if (alpha(frame.pixels[p]) < 128) { 
+          continue;
+        }
 
         int grey = round(brightness(frame.pixels[p]));
         grey += brightnessAdjust;
         grey = constrain(grey, 0, 255);
         grey = grey - (grey % interval);
-        
+
         // replace with a cycled color if it's not a black we're preserving
-        if (!(keepBlack && grey == 0)) { 
-          int paletteIndex = (grey / interval) % palette.length;
-          paletteIndex = (paletteIndex + i) % palette.length;
-          frame.pixels[p] = palette[paletteIndex];
+        if (!(keepBlack && grey == 0)) {
+          if (reverse) { grey = (steps * interval) - grey; }
+          int paletteIndex = (grey / interval) % trimmedPalette.length;
+          paletteIndex = (paletteIndex + i) % trimmedPalette.length;
+          frame.pixels[p] = trimmedPalette[paletteIndex];
         }
         // instead of keeping original color, always force black
         else {
@@ -400,7 +504,7 @@ public class PaletteCycler implements Modifier {
       }
       input.setFrame(i, frame);
     }
-    
+
     return input;
   }
 }
@@ -425,35 +529,47 @@ public class Polarizer implements Modifier {
 
     Frames output = new Frames(input.type, input.count, destWidth, destHeight);
 
-    // polar-ize each frame
+    // create lookup table
+    int[][][] pixelLookup = new int[output.width][output.height][2];
+    for (int destX = -destWidth/2; destX < destWidth/2; destX++) {
+      for (int destY = -destHeight/2; destY < destHeight/2; destY++) {
+        // angle of this destination pixel from center
+        float a = atan2(destY, destX);
+        // adjust the angle to rotate the output
+        a = (a+TWO_PI+rotate) % TWO_PI;
+
+        // distance of this destination pixel from center
+        float r = sqrt(destX*destX+destY*destY);
+
+        // maximum distance of the ellipse at this angle
+        float maxR = (destWidth/2*destHeight/2) / sqrt(
+          pow(destWidth/2, 2)*pow(sin(a-rotate), 2)
+          + pow(destHeight/2, 2)*pow(cos(a-rotate), 2)
+          )-2;
+        if (fill) { 
+          maxR *= 1.42;
+        }
+
+        int srcX = int(map(a, 0, TWO_PI, 0, srcWidth-1));
+        int srcY = int(map(r, 0, maxR, 0, srcHeight-1));
+        if (invert) { 
+          srcY = (srcHeight-1) - srcY;
+        } else { 
+          srcX = (srcWidth-1) - srcX;
+        }
+        pixelLookup[destX+destWidth/2][destY+destHeight/2] = new int[] {srcX, srcY};
+      }
+    }
+
+    // polarize each frame
     for (int i = 0; i < input.count; i++) {
       PImage src = input.data[i];
       PImage des = createImage(destWidth, destHeight, ARGB);
 
-      // fill each destination pixel
-      for (int destX = -destWidth/2; destX < destWidth/2; destX++) {
-        for (int destY = -destHeight/2; destY < destHeight/2; destY++) {
-
-          // angle of this destination pixel from center
-          float a = atan2(destY, destX);
-          // adjust the angle to rotate the output
-          a = (a+TWO_PI+rotate) % TWO_PI;
-
-          // distance of this destination pixel from center
-          float r = sqrt(destX*destX+destY*destY);
-
-          // maximum distance of the ellipse at this angle
-          float maxR = (destWidth/2*destHeight/2) / sqrt(
-            pow(destWidth/2, 2)*pow(sin(a-rotate),2)
-            + pow(destHeight/2, 2)*pow(cos(a-rotate),2)
-          );
-          if (fill) { maxR *= 1.42; }
-
-          int srcX = int(map(a, 0, TWO_PI, 0, srcWidth-1));
-          int srcY = int(map(r, 0, maxR, 0, srcHeight-1));
-          if (invert) { srcY = (srcHeight-1) - srcY; }
-          else { srcX = (srcWidth-1) - srcX; }
-          des.set(destX+destWidth/2, destY+destHeight/2, src.get(srcX, srcY));
+      for (int xO = 0; xO < output.width; xO++) {
+        for (int yO = 0; yO < output.height; yO++) {
+          int[] lookup = pixelLookup[xO][yO];
+          des.set(xO, yO, src.get(lookup[0], lookup[1]));
         }
       }
 
@@ -467,6 +583,75 @@ public class Polarizer implements Modifier {
  * creates polar spiral projection of image
  */
 public class Spiralizer implements Modifier {
+  int diameter = 600;
+  boolean invert = false;
+  int spiralTightness = 7;
+  int antiAlias = 1;
+
+  float e = 2.71828182845904523;
+
+  int translateCoordinate(float num, int base) {
+    int numInt = round(num * base);
+    while (numInt < 0) { numInt += base; }
+    return numInt % base;
+  }
+
+  public Frames modify(Frames input) {
+    println("Spiralizing frames... ");
+
+    Frames output = new Frames(input.type, input.count, diameter, diameter);
+
+    int desWidth = output.width*antiAlias;
+    int desHeight = output.height*antiAlias;
+    int[][][] pixelLookup = new int[desWidth][desHeight][2];
+    float verticalStretch = 1;
+    verticalStretch = input.height * 1.0 / input.width;
+
+    long startTime = System.currentTimeMillis();
+    for (int desX = 0; desX < desWidth; desX++) {
+      for (int desY = 0; desY < desHeight; desY++) {
+  
+        PVector pos = new PVector((desX*2-desWidth)*1.0/desWidth,(desY*2-desHeight)*1.0/desHeight);
+        PVector a = new PVector(log(pos.x*pos.x+pos.y*pos.y) * 0.5, atan2(pos.y, pos.x)+PI);
+        PVector b = new PVector(spiralTightness, -verticalStretch);
+        PVector transformed = new PVector(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);
+        
+        int srcX = translateCoordinate(-transformed.y/TWO_PI, input.width);
+        int srcY = translateCoordinate(transformed.x/(TWO_PI*verticalStretch), input.height);
+
+        if (invert) { 
+          srcX = (input.width-1)-srcX;
+          srcY = (input.height-1)-srcY;
+        }
+
+        pixelLookup[desX][desY] = new int[] {srcX, srcY};
+      }
+    }
+    println("  INFO: transform lookup completed in " + (System.currentTimeMillis() - startTime) + "ms");
+
+    // spiralize each frame
+    for (int i = 0; i < input.count; i++) {
+      PImage src = input.data[i];
+      PImage des = createImage(desWidth, desHeight, ARGB);
+
+      for (int desX = 0; desX < desWidth; desX++) {
+        for (int desY = 0; desY < desHeight; desY++) {
+          int[] lookup = pixelLookup[desX][desY];
+          des.set(desX, desY, src.get(lookup[0], lookup[1]));
+        }
+      }
+      des.resize(output.width, output.height);
+
+      output.addFrame(des);
+    }
+    return output;
+  }
+}
+
+/*******************************************************************************
+ * creates polar spiral projection of image
+ */
+public class SpiralizerOld implements Modifier {
   int diameter = 600;
   boolean invert = false;
   int spiralTightness = 10;
@@ -517,21 +702,24 @@ public class Spiralizer implements Modifier {
           }
           a1 = a2;
         }
-        
-        int srcX = round(pow(log(a1),1.2)*spiralTightness/stretch*PI*input.width % input.width);
+
+        int srcX = round(pow(log(a1), 1.2)*spiralTightness/stretch*PI*input.width % input.width);
         srcX = constrain(srcX, 0, input.width-1);
         int srcY = round(map(rP, r1, r2, 0, input.height));
         srcY = constrain(srcY, 0, input.height-1);
 
-        if (invert) { srcY = (input.height-1)-srcY; }
-        else { srcX = (input.width-1)-srcX; }
+        if (invert) { 
+          srcY = (input.height-1)-srcY;
+        } else { 
+          srcX = (input.width-1)-srcX;
+        }
 
         pixelLookup[xO][yO] = new int[] {srcX, srcY};
       }
     }
-    
+
     println("  INFO: transform lookup completed in " + (System.currentTimeMillis() - startTime) + "ms");
-    
+
     // spiralize each frame
     for (int i = 0; i < input.count; i++) {
       PImage src = input.data[i];
@@ -730,9 +918,9 @@ public class PixelSorter implements Modifier {
           c2 = input.data[i].get(x, y);
           if (contrastThreshold(c1, c2, threshold)) {
             color c3 = color(
-            (red(c1)*(smearFactor-1)+red(c2))/smearFactor, 
-            (green(c1)*(smearFactor-1)+green(c2))/smearFactor, 
-            (blue(c1)*(smearFactor-1)+blue(c2))/smearFactor);
+              (red(c1)*(smearFactor-1)+red(c2))/smearFactor, 
+              (green(c1)*(smearFactor-1)+green(c2))/smearFactor, 
+              (blue(c1)*(smearFactor-1)+blue(c2))/smearFactor);
             input.data[i].set(x, y, c3);
             //input.set(x, y, c1); // simple push
           }
@@ -816,9 +1004,9 @@ public class BoxSwapper implements Modifier {
         // finally, do the swapping
         PImage frame = input.getFrame(frameNumber);
         PImage block1 = frame.get(block1X, block1Y, blockWidth, 
-        blockHeight);
+          blockHeight);
         PImage block2 = frame.get(block2X, block2Y, blockWidth, 
-        blockHeight);
+          blockHeight);
         frame.set(block1X, block1Y, block2);
         frame.set(block2X, block2Y, block1);
         input.setFrame(frameNumber, frame);
@@ -851,7 +1039,9 @@ public class JpegGlitcher implements Modifier {
     for (int i = 0; i < glitchedFrames; i++) {
       int frameNumber = random.nextInt(input.count);
       PImage glitchedFrame = glitchFrame(input.getFrame(frameNumber));
-      if (glitchedFrame != null) { input.setFrame(frameNumber, glitchedFrame); }
+      if (glitchedFrame != null) { 
+        input.setFrame(frameNumber, glitchedFrame);
+      }
     }
     return input;
   }
